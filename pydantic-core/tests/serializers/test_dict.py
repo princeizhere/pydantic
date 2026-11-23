@@ -3,7 +3,7 @@ import json
 import pytest
 from dirty_equals import IsStrictDict
 
-from pydantic_core import SchemaSerializer, core_schema
+from pydantic_core import PydanticSerializationError, SchemaSerializer, core_schema
 
 
 def test_dict_str_int():
@@ -13,6 +13,17 @@ def test_dict_str_int():
     assert v.to_json({'a': 1, 'b': 2, 'c': 3}) == b'{"a":1,"b":2,"c":3}'
 
     assert v.to_json({'a': 1, 'b': 2, 'c': 3}, indent=2) == b'{\n  "a": 1,\n  "b": 2,\n  "c": 3\n}'
+
+
+@pytest.mark.parametrize('key_schema', [core_schema.str_schema(), core_schema.any_schema()])
+def test_dict_key_lone_surrogate(key_schema):
+    # a str key with a lone surrogate can't be encoded to utf-8, so it should error
+    # the same way a str value does, rather than being replaced with U+FFFD
+    v = SchemaSerializer(core_schema.dict_schema(key_schema, core_schema.int_schema()))
+    with pytest.raises(PydanticSerializationError, match='surrogates not allowed'):
+        v.to_json({'\udcff': 1})
+    with pytest.raises(UnicodeEncodeError, match='surrogates not allowed'):
+        v.to_python({'\udcff': 1}, mode='json')
 
 
 def test_dict_any_any():
